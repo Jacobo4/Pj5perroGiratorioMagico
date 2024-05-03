@@ -11,10 +11,12 @@ const vert = `
   
   // Cordenadas de la textura que estamos importando
   varying vec2 vTexCoord;
+  varying vec3 v_position;
   
   void main() {
      gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
      vTexCoord = aTexCoord;
+     v_position = (uModelViewMatrix * aPosition).xyz;
   }
   
 `;
@@ -27,30 +29,40 @@ const frag = `
   // Fog color
   uniform vec4 u_fogColor;
   // Fog density (higher value means denser fog)
-  uniform float u_fogAmount;
+  uniform float u_fogDensity;
   
   // Cordenadas de la textura que estamos importando
   varying vec2 vTexCoord;
+  varying vec3 v_position;
   
   void main() {
      vec4 originalColor = texture2D(sTexture, vTexCoord); 
     
-     // Completely discard fragments when fogAmount is 0 (no fog)
-  
-     // Mix between texture color and fog color based on fog factor
-     vec4 fogColor = mix(u_fogColor, vec4(originalColor.rgb, 100), u_fogAmount);
      
-     gl_FragColor = fogColor;
+     
+     #define LOG2 1.442695
+
+     float fogDistance = length(v_position);
+     float fogAmount = 1. - exp2(-u_fogDensity * u_fogDensity * fogDistance * fogDistance * LOG2);
+     fogAmount = clamp(fogAmount, 0., 1.);
+     
+     if (fogDistance < 0.0017){
+      discard;
+     }
+
+     vec4 fogColor = mix(originalColor, u_fogColor, fogAmount); 
+
+     gl_FragColor = fogColor; 
   }
 `;
 
 let obj, img, shaderProgram;
 let fogColor = [1, 1, 1, 1];// Adjust fog color as desired (RGBA)
-let fogAmount = 0.5; // Adjust fog density (higher for denser fog)
-const xOffset = 15 ;
-const zOffset = 25 ;
-
-let fogAmountSlider;
+let fogDensity =0.001; // Adjust fog density (higher for denser fog)
+const xOffset = 10 ;
+const zOffset = 150 ;
+let frameCount = 0;
+let fogDensitySlider;
 
 function preload(){
   obj = loadModel('assets/feline/feline.obj', true);
@@ -62,20 +74,21 @@ function setup(){
   currentShader = createShader(vert, frag);
   noStroke();
   // Create a slider for fog density
-  fogAmountSlider = createSlider(0, 1, fogAmount, 0.01);
-  fogAmountSlider.position(20, 20);
-  fogAmountSlider.input(updateFogAmount);
+  fogDensitySlider = createSlider(0, 0.003, fogDensity,0.0001);
+  fogDensitySlider.position(20, 20);
+  fogDensitySlider.input(updateFogDensity);
 }
 
-function updateFogAmount() {
-  fogAmount = fogAmountSlider.value();
+function updateFogDensity() {
+  fogDensity = fogDensitySlider.value();
 }
 
 function draw(){
   background(255)
   orbitControl();
 
-  rotateX(PI);
+  rotateX(PI - 0.2);
+  rotateY(3.7);
 
   shader(currentShader);
 
@@ -84,15 +97,26 @@ function draw(){
 
   // Set fog color and amount uniforms
   currentShader.setUniform("u_fogColor", fogColor);
-  currentShader.setUniform("u_fogAmount", fogAmount);
+  currentShader.setUniform("u_fogDensity", fogDensity);
+
 
   // Loop to draw multiple figures with translatio2n
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 40; i++) {
+    push();
     // Create a model matrix with translation
     let modelMatrix = translate(-2 + i * xOffset, 0, -i * zOffset);
+     currentShader.setUniform("sTexture", img);
+     applyMatrix(
+      cos(frameCount), -sin(frameCount), 0, 0,
+      sin(frameCount), cos(frameCount), 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    );
 
-    currentShader.setUniform("sTexture", img);
     // Draw the model
     model(obj);
+    pop();
   }
+
+  frameCount += 0.003;
 }
